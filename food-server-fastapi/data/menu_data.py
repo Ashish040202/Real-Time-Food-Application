@@ -1,0 +1,86 @@
+import strawberry
+from typing import List
+from schema.types import MenuItem
+
+menu_items: List[MenuItem] = [
+    MenuItem(
+        id=strawberry.ID("1"),
+        name="Chicken Biryani",
+        description="Aromatic basmati rice cooked with tender chicken and traditional spices",
+        rate=14.99,
+        category="Main Course",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("2"),
+        name="Butter Chicken with Naan",
+        description="Creamy tomato-based curry with succulent chicken pieces, served with fresh naan bread",
+        rate=16.99,
+        category="Main Course",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("3"),
+        name="Vegetable Samosas (6 pcs)",
+        description="Crispy pastry filled with spiced potatoes and peas",
+        rate=8.99,
+        category="Appetizer",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("4"),
+        name="Masala Chai Tea",
+        description="Traditional Indian spiced tea with milk",
+        rate=3.99,
+        category="Beverage",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("5"),
+        name="Tandoori Chicken",
+        description="Marinated chicken cooked in a clay oven with traditional spices",
+        rate=18.99,
+        category="Main Course",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("6"),
+        name="Palak Paneer",
+        description="Fresh cottage cheese cubes in a creamy spinach curry",
+        rate=13.99,
+        category="Main Course",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("7"),
+        name="Gulab Jamun (4 pcs)",
+        description="Sweet milk dumplings soaked in rose-flavored syrup",
+        rate=6.99,
+        category="Dessert",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("8"),
+        name="Mango Lassi",
+        description="Refreshing yogurt-based drink with sweet mango",
+        rate=4.99,
+        category="Beverage",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("9"),
+        name="Chicken Tikka Masala",
+        description="Grilled chicken chunks in a creamy tomato-based sauce",
+        rate=15.99,
+        category="Main Course",
+        available=True,
+    ),
+    MenuItem(
+        id=strawberry.ID("10"),
+        name="Garlic Naan",
+        description="Fresh flatbread topped with garlic and butter",
+        rate=3.49,
+        category="Bread",
+        available=True,
+    ),
+]
