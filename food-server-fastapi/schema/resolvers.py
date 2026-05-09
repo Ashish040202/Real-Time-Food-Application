@@ -1,13 +1,39 @@
 import json
+import uuid
 import strawberry
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncGenerator, List, Optional
 from strawberry.types import Info
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from .types import Order, MenuItem, OrderStatus, OrderType, CreateOrderInput
-from data.orders_data import orders
-from data.menu_data import menu_items
+from models import OrderModel, MenuItemModel
 import redis_client
+
+
+def model_to_order(m: OrderModel) -> Order:
+    return Order(
+        id=strawberry.ID(m.id),
+        customer_name=m.customer_name,
+        product=m.product,
+        quantity=m.quantity,
+        price=m.price,
+        status=OrderStatus(m.status),
+        type=OrderType(m.type),
+        created_at=m.created_at,
+    )
+
+
+def model_to_menu_item(m: MenuItemModel) -> MenuItem:
+    return MenuItem(
+        id=strawberry.ID(m.id),
+        name=m.name,
+        description=m.description,
+        rate=m.rate,
+        category=m.category,
+        available=m.available,
+    )
 
 
 def order_to_dict(order: Order) -> dict:
@@ -39,50 +65,78 @@ def dict_to_order(data: dict) -> Order:
 @strawberry.type
 class Query:
     @strawberry.field
-    def orders(self) -> List[Order]:
-        return orders
+    async def orders(self, info: Info) -> List[Order]:
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(select(OrderModel))
+        return [model_to_order(o) for o in result.scalars().all()]
 
     @strawberry.field
-    def orders_by_status(self, status: OrderStatus) -> List[Order]:
-        return [o for o in orders if o.status == status]
+    async def orders_by_status(self, info: Info, status: OrderStatus) -> List[Order]:
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(OrderModel).where(OrderModel.status == status.value)
+        )
+        return [model_to_order(o) for o in result.scalars().all()]
 
     @strawberry.field
-    def orders_by_type(self, type: OrderType) -> List[Order]:
-        return [o for o in orders if o.type == type]
+    async def orders_by_type(self, info: Info, type: OrderType) -> List[Order]:
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(OrderModel).where(OrderModel.type == type.value)
+        )
+        return [model_to_order(o) for o in result.scalars().all()]
 
     @strawberry.field
-    def orders_by_order_id(self, order_id: strawberry.ID) -> Optional[Order]:
-        return next((o for o in orders if o.id == order_id), None)
+    async def orders_by_order_id(self, info: Info, order_id: strawberry.ID) -> Optional[Order]:
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(OrderModel).where(OrderModel.id == str(order_id))
+        )
+        m = result.scalar_one_or_none()
+        return model_to_order(m) if m else None
 
     @strawberry.field
-    def list_order_items(self) -> List[MenuItem]:
-        return menu_items
+    async def list_order_items(self, info: Info) -> List[MenuItem]:
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(select(MenuItemModel))
+        return [model_to_menu_item(m) for m in result.scalars().all()]
 
 
 @strawberry.type
 class Mutation:
     @strawberry.mutation
-    async def create_order(self, input: CreateOrderInput) -> Order:
-        new_order = Order(
-            id=strawberry.ID(str(len(orders) + 1)),
+    async def create_order(self, info: Info, input: CreateOrderInput) -> Order:
+        db: AsyncSession = info.context["db"]
+        new_model = OrderModel(
+            id=str(uuid.uuid4()),
             customer_name=input.customer_name,
             product=input.product,
             quantity=input.quantity,
             price=input.price,
-            status=OrderStatus.PENDING,
-            type=input.type,
-            created_at=datetime.utcnow().isoformat() + "Z",
+            status=OrderStatus.PENDING.value,
+            type=input.type.value,
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
-        orders.append(new_order)
-        await redis_client.publish("ORDER_CREATED", order_to_dict(new_order))
-        return new_order
+        db.add(new_model)
+        await db.commit()
+        await db.refresh(new_model)
+        order = model_to_order(new_model)
+        await redis_client.publish("ORDER_CREATED", order_to_dict(order))
+        return order
 
     @strawberry.mutation
-    async def update_order_status(self, id: strawberry.ID, status: OrderStatus) -> Order:
-        order = next((o for o in orders if o.id == id), None)
-        if not order:
+    async def update_order_status(self, info: Info, id: strawberry.ID, status: OrderStatus) -> Order:
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(OrderModel).where(OrderModel.id == str(id))
+        )
+        order_model = result.scalar_one_or_none()
+        if not order_model:
             raise ValueError("Order not found")
-        order.status = status
+        order_model.status = status.value
+        await db.commit()
+        await db.refresh(order_model)
+        order = model_to_order(order_model)
         await redis_client.publish("ORDER_STATUS_UPDATED", order_to_dict(order))
         return order
 
