@@ -197,11 +197,13 @@ async def run_subscriber() -> None:
 
     try:
         async for message in pubsub.listen():
+            print(f"[notification_worker] raw message type={message['type']}", flush=True)
             if message["type"] != "message":
                 continue
             try:
                 data: dict = json.loads(message["data"])
                 channel: str = message["channel"]
+                print(f"[notification_worker] received on channel={channel}", flush=True)
 
                 if channel == "ORDER_CREATED":
                     await notification_queue.add("new_order", {

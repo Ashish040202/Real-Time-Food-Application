@@ -22,7 +22,8 @@ def _client() -> redis.Redis:
 async def publish(channel: str, data: dict) -> None:
     r = _client()
     try:
-        await r.publish(channel, json.dumps(data))
+        result = await r.publish(channel, json.dumps(data))
+        print(f"[redis_client] published to {channel}, subscribers={result}", flush=True)
     finally:
         await r.close()
 
