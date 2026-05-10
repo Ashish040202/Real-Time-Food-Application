@@ -38,6 +38,19 @@ class MenuItemModel(Base):
     available = Column(Boolean, nullable=False, default=True)
 
 
+class NotificationModel(Base):
+    __tablename__ = "notifications"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    recipient_id = Column(String, ForeignKey("users.id"), nullable=False)
+    type = Column(String, nullable=False)        # NEW_ORDER | ORDER_CANCELLED | ORDER_COMPLETED
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    order_id = Column(String, nullable=True)     # informational only, no FK
+    read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(String, nullable=False)
+
+
 class OrderEventModel(Base):
     __tablename__ = "order_events"
 

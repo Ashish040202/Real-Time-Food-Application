@@ -16,6 +16,20 @@ export const ORDER_CREATED_SUBSCRIPTION = gql`
   }
 `
 
+export const NOTIFICATION_SUBSCRIPTION = gql`
+  subscription OnNotificationReceived {
+    notificationReceived {
+      id
+      type
+      title
+      message
+      orderId
+      read
+      createdAt
+    }
+  }
+`
+
 export const ORDER_UPDATED_SUBSCRIPTION = gql`
   subscription OnOrderUpdated($orderId: ID) {
     orderUpdated: orderStatusUpdated(orderId: $orderId) {

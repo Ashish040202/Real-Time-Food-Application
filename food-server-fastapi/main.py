@@ -1,3 +1,4 @@
+import asyncio
 import strawberry
 from contextlib import asynccontextmanager
 from strawberry.fastapi import GraphQLRouter, BaseContext
@@ -38,7 +39,20 @@ async def lifespan(app: FastAPI):
     await init_db()
     async with AsyncSessionLocal() as db:
         await seed_menu_items(db)
+
+    from notification_worker import run_subscriber, run_worker
+    subscriber_task = asyncio.create_task(run_subscriber())
+    worker_task = asyncio.create_task(run_worker())
+
     yield
+
+    subscriber_task.cancel()
+    worker_task.cancel()
+    for task in (subscriber_task, worker_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 schema = strawberry.Schema(
@@ -54,27 +68,42 @@ class AppContext(BaseContext):
         self.db = db
         self.current_user = None
         self._user_loaded = False
+        self._load_lock = asyncio.Lock()
 
     async def load_user(self):
+        # Fast path: already loaded (no lock needed after first load)
         if self._user_loaded:
             return self.current_user
-        self._user_loaded = True
-        token = None
-        conn = self.request or self.websocket
-        if conn:
-            auth_header = conn.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:]
-            else:
-                token = conn.query_params.get("token")
-        if token:
-            user_id = decode_token(token)
-            if user_id:
-                result = await self.db.execute(
-                    select(UserModel).where(UserModel.id == user_id)
-                )
-                self.current_user = result.scalar_one_or_none()
-        return self.current_user
+        # Slow path: acquire lock so concurrent subscription starts don't
+        # race past each other before the DB query completes.
+        async with self._load_lock:
+            if self._user_loaded:  # re-check inside lock
+                return self.current_user
+            token = None
+            req = getattr(self, 'request', None)
+            ws = getattr(self, 'websocket', None)
+            conn = req or ws
+            if conn:
+                auth_header = conn.headers.get("Authorization", "")
+                if auth_header.startswith("Bearer "):
+                    token = auth_header[7:]
+                else:
+                    token = conn.query_params.get("token")
+            # Check connectionParams (sent by graphql-ws client via connectionParams)
+            if not token:
+                cp = getattr(self, 'connection_params', None) or {}
+                header = cp.get("Authorization", "")
+                if header.startswith("Bearer "):
+                    token = header[7:]
+            if token:
+                user_id = decode_token(token)
+                if user_id:
+                    result = await self.db.execute(
+                        select(UserModel).where(UserModel.id == user_id)
+                    )
+                    self.current_user = result.scalar_one_or_none()
+            self._user_loaded = True
+            return self.current_user
 
     def get(self, key, default=None):
         if key == "db":

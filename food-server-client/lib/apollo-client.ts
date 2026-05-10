@@ -27,11 +27,10 @@ const wsLink =
   typeof window !== 'undefined'
     ? new GraphQLWsLink(
         createClient({
-          url: () => {
+          url: GRAPHQL_WS,
+          connectionParams: () => {
             const token = getToken()
-            return token
-              ? `${GRAPHQL_WS}?token=${encodeURIComponent(token)}`
-              : GRAPHQL_WS
+            return token ? { Authorization: `Bearer ${token}` } : {}
           },
         })
       )

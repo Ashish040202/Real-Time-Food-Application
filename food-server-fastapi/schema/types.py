@@ -85,6 +85,24 @@ class CreateOrderInput:
 
 
 @strawberry.enum
+class NotificationType(Enum):
+    NEW_ORDER = "NEW_ORDER"
+    ORDER_CANCELLED = "ORDER_CANCELLED"
+    ORDER_COMPLETED = "ORDER_COMPLETED"
+
+
+@strawberry.type
+class Notification:
+    id: strawberry.ID
+    type: NotificationType
+    title: str
+    message: str
+    order_id: Optional[strawberry.ID]
+    read: bool
+    created_at: str
+
+
+@strawberry.enum
 class OrderEventType(Enum):
     ORDER_PLACED = "ORDER_PLACED"
     STATUS_CHANGED = "STATUS_CHANGED"

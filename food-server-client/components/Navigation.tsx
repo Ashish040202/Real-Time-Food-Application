@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import NotificationBell from './NotificationBell'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -52,6 +53,7 @@ export default function Navigation() {
           <div className="flex items-center gap-4">
             {isAuthenticated ? (
               <>
+                <NotificationBell />
                 <div className="hidden md:block text-right">
                   <p className="text-sm font-medium leading-none">{user?.name}</p>
                   <p className="text-xs text-gray-400 mt-0.5">

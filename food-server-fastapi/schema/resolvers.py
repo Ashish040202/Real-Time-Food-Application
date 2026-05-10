@@ -12,8 +12,9 @@ from .types import (
     OrderStatus, OrderType, UserRole,
     CreateOrderInput, RegisterInput, LoginInput,
     OrderEvent, OrderHistory, OrderEventType,
+    Notification, NotificationType,
 )
-from models import OrderModel, MenuItemModel, UserModel, OrderEventModel
+from models import OrderModel, MenuItemModel, UserModel, OrderEventModel, NotificationModel
 from auth import hash_password, verify_password, create_access_token
 import redis_client
 
@@ -92,6 +93,18 @@ def model_to_order_event(m: OrderEventModel) -> OrderEvent:
         triggered_by_name=m.triggered_by_name,
         triggered_by_role=m.triggered_by_role,
         timestamp=m.timestamp,
+    )
+
+
+def model_to_notification(m: NotificationModel) -> Notification:
+    return Notification(
+        id=strawberry.ID(m.id),
+        type=NotificationType(m.type),
+        title=m.title,
+        message=m.message,
+        order_id=strawberry.ID(m.order_id) if m.order_id else None,
+        read=m.read,
+        created_at=m.created_at,
     )
 
 
@@ -220,6 +233,18 @@ class Query:
         result = await db.execute(select(OrderModel).order_by(OrderModel.created_at.desc()))
         return [model_to_order(o) for o in result.scalars().all()]
 
+    @strawberry.field
+    async def my_notifications(self, info: Info) -> List[Notification]:
+        user = await require_auth(info)
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(NotificationModel)
+            .where(NotificationModel.recipient_id == user.id)
+            .order_by(NotificationModel.created_at.desc())
+            .limit(50)
+        )
+        return [model_to_notification(n) for n in result.scalars().all()]
+
 
 # ---------- Mutation ----------
 
@@ -287,6 +312,37 @@ class Mutation:
         return order
 
     @strawberry.mutation
+    async def mark_notification_read(self, info: Info, id: strawberry.ID) -> bool:
+        user = await require_auth(info)
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(NotificationModel).where(
+                NotificationModel.id == str(id),
+                NotificationModel.recipient_id == user.id,
+            )
+        )
+        notif = result.scalar_one_or_none()
+        if notif:
+            notif.read = True
+            await db.commit()
+        return True
+
+    @strawberry.mutation
+    async def mark_all_notifications_read(self, info: Info) -> bool:
+        user = await require_auth(info)
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(NotificationModel).where(
+                NotificationModel.recipient_id == user.id,
+                NotificationModel.read == False,  # noqa: E712
+            )
+        )
+        for notif in result.scalars().all():
+            notif.read = True
+        await db.commit()
+        return True
+
+    @strawberry.mutation
     async def update_order_status(self, info: Info, id: strawberry.ID, status: OrderStatus) -> Order:
         db: AsyncSession = info.context["db"]
         user = await require_auth(info)
@@ -310,7 +366,9 @@ class Mutation:
         await db.commit()
         await db.refresh(order_model)
         order = model_to_order(order_model)
-        await redis_client.publish("ORDER_STATUS_UPDATED", order_to_dict(order))
+        publish_data = order_to_dict(order)
+        publish_data["triggered_by_role"] = user.role   # needed by notification subscriber
+        await redis_client.publish("ORDER_STATUS_UPDATED", publish_data)
         return order
 
 
@@ -332,7 +390,30 @@ class Subscription:
                     yield order
         finally:
             await pubsub.unsubscribe("ORDER_CREATED")
-            await r.aclose()
+            await r.close()
+
+    @strawberry.subscription
+    async def notification_received(self, info: Info) -> AsyncGenerator[Notification, None]:
+        user = await require_auth(info)
+        r, pubsub = await redis_client.create_pubsub()
+        channel = f"NOTIFICATION:{user.id}"
+        await pubsub.subscribe(channel)
+        try:
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    data = json.loads(message["data"])
+                    yield Notification(
+                        id=strawberry.ID(data["id"]),
+                        type=NotificationType(data["type"]),
+                        title=data["title"],
+                        message=data["message"],
+                        order_id=strawberry.ID(data["order_id"]) if data.get("order_id") else None,
+                        read=data["read"],
+                        created_at=data["created_at"],
+                    )
+        finally:
+            await pubsub.unsubscribe(channel)
+            await r.close()
 
     @strawberry.subscription
     async def order_status_updated(
@@ -352,4 +433,4 @@ class Subscription:
                     yield order
         finally:
             await pubsub.unsubscribe("ORDER_STATUS_UPDATED")
-            await r.aclose()
+            await r.close()

@@ -72,6 +72,20 @@ export const LIST_ORDER_ITEMS = gql`
   }
 `
 
+export const MY_NOTIFICATIONS = gql`
+  query MyNotifications {
+    myNotifications {
+      id
+      type
+      title
+      message
+      orderId
+      read
+      createdAt
+    }
+  }
+`
+
 export const GET_ALL_ORDERS_FOR_HISTORY = gql`
   query GetAllOrdersForHistory {
     allOrdersWithEvents {

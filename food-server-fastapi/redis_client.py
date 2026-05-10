@@ -14,7 +14,7 @@ async def publish(channel: str, data: dict) -> None:
     try:
         await r.publish(channel, json.dumps(data))
     finally:
-        await r.aclose()
+        await r.close()
 
 
 async def create_pubsub():

@@ -44,6 +44,18 @@ export const CREATE_ORDER = gql`
   }
 `
 
+export const MARK_NOTIFICATION_READ = gql`
+  mutation MarkNotificationRead($id: ID!) {
+    markNotificationRead(id: $id)
+  }
+`
+
+export const MARK_ALL_NOTIFICATIONS_READ = gql`
+  mutation MarkAllNotificationsRead {
+    markAllNotificationsRead
+  }
+`
+
 export const UPDATE_ORDER_STATUS = gql`
   mutation UpdateOrderStatus($id: ID!, $status: OrderStatus!) {
     updateOrderStatus(id: $id, status: $status) {
