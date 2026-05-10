@@ -8,31 +8,40 @@ from sqlalchemy import pool
 from alembic import context
 from dotenv import load_dotenv
 
-# Load .env so DATABASE_URL is available
+# Load .env if present (local dev). In Docker/Railway env vars come from the platform.
 load_dotenv()
 
-# Alembic Config object (gives access to alembic.ini values)
 config = context.config
 
-# Override sqlalchemy.url from environment — never hardcode credentials
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+# ── Resolve DATABASE_URL ──────────────────────────────────────────────────────
+# Railway injects postgres:// or postgresql:// — normalize to asyncpg dialect.
+_db_url = os.getenv("DATABASE_URL", "")
+if not _db_url:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Set it in your .env file or platform environment variables."
+    )
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif _db_url.startswith("postgresql://"):
+    _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Set up Python logging from alembic.ini
+# Write back so database.py (imported below) picks it up via os.getenv()
+os.environ["DATABASE_URL"] = _db_url
+config.set_main_option("sqlalchemy.url", _db_url)
+# ─────────────────────────────────────────────────────────────────────────────
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import Base so Alembic can diff models vs the live DB for autogenerate
+# Import AFTER DATABASE_URL is set in os.environ
 from database import Base  # noqa: E402
-import models  # noqa: E402, F401  — registers all models with Base.metadata
+import models  # noqa: E402, F401
 
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """
-    Run migrations without a live DB connection (outputs SQL to stdout).
-    Useful for generating a SQL script to review before applying.
-    """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -51,11 +60,10 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
-    """Create an async engine and run migrations inside it."""
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
-        poolclass=pool.NullPool,  # no pooling — migrations are one-shot
+        poolclass=pool.NullPool,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
