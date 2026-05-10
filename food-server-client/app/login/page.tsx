@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useMutation } from '@apollo/client/react'
 import { LOGIN } from '@/lib/graphql/mutation'
 import { useAuth } from '@/lib/auth-context'
+import type { AuthPayload } from '@/types/order'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -17,7 +18,7 @@ export default function LoginPage() {
     if (initialized && isAuthenticated) router.replace('/')
   }, [initialized, isAuthenticated, router])
 
-  const [loginMutation, { loading, error }] = useMutation(LOGIN)
+  const [loginMutation, { loading, error }] = useMutation<{ login: AuthPayload }>(LOGIN)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

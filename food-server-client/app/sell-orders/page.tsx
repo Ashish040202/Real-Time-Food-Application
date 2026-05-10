@@ -39,7 +39,8 @@ export default function SellOrdersPage() {
     if (!data?.ordersByType) return
     const unsubscribe = subscribeToMore<OnOrderCreated>({
       document: ORDER_CREATED_SUBSCRIPTION,
-      updateQuery: (prev: SellOrders, { subscriptionData }) => {
+      updateQuery: (prevRaw, { subscriptionData }): SellOrders => {
+        const prev = prevRaw as SellOrders
         if (!subscriptionData.data) return prev
         const newOrder = subscriptionData.data.orderCreated
         if (newOrder.type !== 'SELL') return prev

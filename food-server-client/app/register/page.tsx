@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useMutation } from '@apollo/client/react'
 import { REGISTER } from '@/lib/graphql/mutation'
 import { useAuth } from '@/lib/auth-context'
+import type { AuthPayload } from '@/types/order'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -21,7 +22,7 @@ export default function RegisterPage() {
     if (initialized && isAuthenticated) router.replace('/')
   }, [initialized, isAuthenticated, router])
 
-  const [register, { loading, error }] = useMutation(REGISTER)
+  const [register, { loading, error }] = useMutation<{ register: AuthPayload }>(REGISTER)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
