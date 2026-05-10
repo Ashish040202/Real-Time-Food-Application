@@ -28,6 +28,12 @@ elif _db_url.startswith("postgresql://"):
 
 # Write back so database.py (imported below) picks it up via os.getenv()
 os.environ["DATABASE_URL"] = _db_url
+
+# Temporary debug — remove after confirming URL shape on Railway
+import sys
+_masked = _db_url[:30] + "..." if len(_db_url) > 30 else _db_url
+print(f"[alembic] DATABASE_URL repr (first 30 chars): {repr(_masked)}", file=sys.stderr, flush=True)
+print(f"[alembic] DATABASE_URL length: {len(_db_url)}", file=sys.stderr, flush=True)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if config.config_file_name is not None:
