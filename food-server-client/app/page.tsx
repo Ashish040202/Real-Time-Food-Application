@@ -40,13 +40,19 @@ export default function Home() {
       href: '/sell-orders',
       color: 'bg-red-600 hover:bg-red-700',
     },
+    {
+      title: 'Order History',
+      description: 'Full audit trail — every status change with timestamps',
+      href: '/order-history',
+      color: 'bg-violet-600 hover:bg-violet-700',
+    },
   ]
 
   if (!isAuthenticated) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4">
         <div className="text-center max-w-lg">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">Food Orders</h1>
+          <h1 className="text-5xl font-bold text-gray-900 mb-4">Patiala House</h1>
           <p className="text-lg text-gray-500 mb-10">
             A real-time food ordering platform powered by GraphQL subscriptions.
           </p>

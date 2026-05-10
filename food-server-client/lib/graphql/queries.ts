@@ -71,3 +71,47 @@ export const LIST_ORDER_ITEMS = gql`
     }
   }
 `
+
+export const GET_ALL_ORDERS_FOR_HISTORY = gql`
+  query GetAllOrdersForHistory {
+    allOrdersWithEvents {
+      id
+      userId
+      customerName
+      product
+      quantity
+      price
+      status
+      type
+      createdAt
+    }
+  }
+`
+
+export const GET_ORDER_HISTORY = gql`
+  query GetOrderHistory($orderId: ID!) {
+    orderHistory(orderId: $orderId) {
+      order {
+        id
+        userId
+        customerName
+        product
+        quantity
+        price
+        status
+        type
+        createdAt
+      }
+      events {
+        id
+        orderId
+        eventType
+        oldStatus
+        newStatus
+        triggeredByName
+        triggeredByRole
+        timestamp
+      }
+    }
+  }
+`

@@ -21,6 +21,6 @@ async def get_db():
 
 
 async def init_db():
-    from models import OrderModel, MenuItemModel  # noqa: F401 — ensures models are registered
+    from models import UserModel, OrderModel, MenuItemModel, OrderEventModel  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

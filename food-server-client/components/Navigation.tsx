@@ -21,6 +21,7 @@ export default function Navigation() {
     { href: '/view-orders', label: 'View Orders', show: isAuthenticated },
     { href: '/live-orders', label: 'Live Orders', show: isAdmin },
     { href: '/sell-orders', label: 'Sell Orders', show: isAdmin },
+    { href: '/order-history', label: 'Order History', show: isAdmin },
   ]
 
   return (
@@ -29,7 +30,7 @@ export default function Navigation() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-6">
             <Link href="/" className="text-xl font-bold tracking-tight">
-              Food Orders
+              Patiala House
             </Link>
             <div className="hidden md:flex space-x-1">
               {navItems

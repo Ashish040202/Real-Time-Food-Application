@@ -9,8 +9,8 @@ import { AuthProvider } from '@/lib/auth-context'
 const inter = Geist_Mono({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Food Orders App',
-  description: 'Manage your food orders with Apollo GraphQL',
+  title: 'Patiala House',
+  description: 'Real-time food ordering at Patiala House',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

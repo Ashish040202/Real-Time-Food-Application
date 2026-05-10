@@ -1,6 +1,6 @@
 import strawberry
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 
 
 @strawberry.enum
@@ -82,3 +82,27 @@ class CreateOrderInput:
     quantity: int
     price: float
     type: OrderType
+
+
+@strawberry.enum
+class OrderEventType(Enum):
+    ORDER_PLACED = "ORDER_PLACED"
+    STATUS_CHANGED = "STATUS_CHANGED"
+
+
+@strawberry.type
+class OrderEvent:
+    id: strawberry.ID
+    order_id: strawberry.ID
+    event_type: OrderEventType
+    old_status: Optional[OrderStatus]
+    new_status: OrderStatus
+    triggered_by_name: Optional[str]
+    triggered_by_role: Optional[str]
+    timestamp: str
+
+
+@strawberry.type
+class OrderHistory:
+    order: Order
+    events: List[OrderEvent]

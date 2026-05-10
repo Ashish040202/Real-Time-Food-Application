@@ -34,6 +34,10 @@ export default function LiveOrdersPage() {
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
       await updateOrderStatus({ variables: { id: orderId, status: newStatus } })
+      // Update local state immediately — the subscription handles updates from other clients
+      setLiveOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus as OrderStatus } : o))
+      )
     } catch (error) {
       console.error('Error updating order status:', error)
     }

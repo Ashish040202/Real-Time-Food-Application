@@ -11,8 +11,9 @@ from .types import (
     Order, MenuItem, User, AuthPayload,
     OrderStatus, OrderType, UserRole,
     CreateOrderInput, RegisterInput, LoginInput,
+    OrderEvent, OrderHistory, OrderEventType,
 )
-from models import OrderModel, MenuItemModel, UserModel
+from models import OrderModel, MenuItemModel, UserModel, OrderEventModel
 from auth import hash_password, verify_password, create_access_token
 import redis_client
 
@@ -79,6 +80,41 @@ def order_to_dict(order: Order) -> dict:
         "type": order.type.value,
         "created_at": order.created_at,
     }
+
+
+def model_to_order_event(m: OrderEventModel) -> OrderEvent:
+    return OrderEvent(
+        id=strawberry.ID(m.id),
+        order_id=strawberry.ID(m.order_id),
+        event_type=OrderEventType(m.event_type),
+        old_status=OrderStatus(m.old_status) if m.old_status else None,
+        new_status=OrderStatus(m.new_status),
+        triggered_by_name=m.triggered_by_name,
+        triggered_by_role=m.triggered_by_role,
+        timestamp=m.timestamp,
+    )
+
+
+async def record_event(
+    db: AsyncSession,
+    order_id: str,
+    event_type: OrderEventType,
+    new_status: OrderStatus,
+    old_status: Optional[OrderStatus],
+    user: Optional[UserModel],
+) -> None:
+    event = OrderEventModel(
+        id=str(uuid.uuid4()),
+        order_id=order_id,
+        event_type=event_type.value,
+        old_status=old_status.value if old_status else None,
+        new_status=new_status.value,
+        triggered_by_id=user.id if user else None,
+        triggered_by_name=user.name if user else None,
+        triggered_by_role=user.role if user else None,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+    db.add(event)
 
 
 def dict_to_order(data: dict) -> Order:
@@ -155,6 +191,35 @@ class Query:
         result = await db.execute(select(MenuItemModel))
         return [model_to_menu_item(m) for m in result.scalars().all()]
 
+    @strawberry.field
+    async def order_history(self, info: Info, order_id: strawberry.ID) -> OrderHistory:
+        await require_admin(info)
+        db: AsyncSession = info.context["db"]
+        order_result = await db.execute(
+            select(OrderModel).where(OrderModel.id == str(order_id))
+        )
+        order_model = order_result.scalar_one_or_none()
+        if not order_model:
+            raise ValueError("Order not found")
+        events_result = await db.execute(
+            select(OrderEventModel)
+            .where(OrderEventModel.order_id == str(order_id))
+            .order_by(OrderEventModel.timestamp)
+        )
+        events = events_result.scalars().all()
+        return OrderHistory(
+            order=model_to_order(order_model),
+            events=[model_to_order_event(e) for e in events],
+        )
+
+    @strawberry.field
+    async def all_orders_with_events(self, info: Info) -> List[Order]:
+        """Admin-only: returns all orders (used to populate the history browser)."""
+        await require_admin(info)
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(select(OrderModel).order_by(OrderModel.created_at.desc()))
+        return [model_to_order(o) for o in result.scalars().all()]
+
 
 # ---------- Mutation ----------
 
@@ -207,6 +272,14 @@ class Mutation:
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         db.add(new_model)
+        await db.flush()  # write order to DB within transaction so FK exists for the event
+        await record_event(
+            db, new_model.id,
+            OrderEventType.ORDER_PLACED,
+            OrderStatus.PENDING,
+            old_status=None,
+            user=user,
+        )
         await db.commit()
         await db.refresh(new_model)
         order = model_to_order(new_model)
@@ -225,7 +298,15 @@ class Mutation:
             raise ValueError("Order not found")
         if user.role != UserRole.ADMIN.value and order_model.user_id != user.id:
             raise ValueError("Access denied")
+        old_status = OrderStatus(order_model.status)
         order_model.status = status.value
+        await record_event(
+            db, order_model.id,
+            OrderEventType.STATUS_CHANGED,
+            status,
+            old_status=old_status,
+            user=user,
+        )
         await db.commit()
         await db.refresh(order_model)
         order = model_to_order(order_model)

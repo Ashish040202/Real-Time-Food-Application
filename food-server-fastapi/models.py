@@ -36,3 +36,17 @@ class MenuItemModel(Base):
     rate = Column(Float, nullable=False)
     category = Column(String, nullable=True)
     available = Column(Boolean, nullable=False, default=True)
+
+
+class OrderEventModel(Base):
+    __tablename__ = "order_events"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String, ForeignKey("orders.id"), nullable=False)
+    event_type = Column(String, nullable=False)       # ORDER_PLACED | STATUS_CHANGED
+    old_status = Column(String, nullable=True)         # null for the first event
+    new_status = Column(String, nullable=False)
+    triggered_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    triggered_by_name = Column(String, nullable=True)
+    triggered_by_role = Column(String, nullable=True)  # USER | ADMIN
+    timestamp = Column(String, nullable=False)
