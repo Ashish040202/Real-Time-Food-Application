@@ -2,7 +2,7 @@ import asyncio
 import os
 from logging.config import fileConfig
 
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import pool
 
 from alembic import context
@@ -28,7 +28,6 @@ elif _db_url.startswith("postgresql://"):
 
 # Write back so database.py (imported below) picks it up via os.getenv()
 os.environ["DATABASE_URL"] = _db_url
-config.set_main_option("sqlalchemy.url", _db_url)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if config.config_file_name is not None:
@@ -43,9 +42,8 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=_db_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -61,11 +59,9 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Use _db_url directly — bypasses ConfigParser interpolation which mangles
+    # special characters (%, @) in passwords when read back via get_section().
+    connectable = create_async_engine(_db_url, poolclass=pool.NullPool)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
