@@ -4,6 +4,12 @@ from typing import Optional
 
 
 @strawberry.enum
+class UserRole(Enum):
+    USER = "USER"
+    ADMIN = "ADMIN"
+
+
+@strawberry.enum
 class OrderStatus(Enum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
@@ -20,8 +26,23 @@ class OrderType(Enum):
 
 
 @strawberry.type
+class User:
+    id: strawberry.ID
+    name: str
+    email: str
+    role: UserRole
+
+
+@strawberry.type
+class AuthPayload:
+    token: str
+    user: User
+
+
+@strawberry.type
 class Order:
     id: strawberry.ID
+    user_id: Optional[strawberry.ID]
     customer_name: str
     product: str
     quantity: int
@@ -42,8 +63,21 @@ class MenuItem:
 
 
 @strawberry.input
+class RegisterInput:
+    name: str
+    email: str
+    password: str
+    role: UserRole = UserRole.USER
+
+
+@strawberry.input
+class LoginInput:
+    email: str
+    password: str
+
+
+@strawberry.input
 class CreateOrderInput:
-    customer_name: str
     product: str
     quantity: int
     price: float

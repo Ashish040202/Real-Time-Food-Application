@@ -1,5 +1,18 @@
+export interface AuthUser {
+  id: string
+  name: string
+  email: string
+  role: 'USER' | 'ADMIN'
+}
+
+export interface AuthPayload {
+  token: string
+  user: AuthUser
+}
+
 export interface Order {
   id: string
+  userId?: string
   customerName: string
   product: string
   quantity: number
@@ -21,8 +34,8 @@ export interface OrderItem {
 export enum OrderStatus {
   PENDING = 'PENDING',
   ACCEPTED = 'ACCEPTED',
-  READY_FOR_PICKUP = 'READY_FOR_PICKUP',
   PROCESSING = 'PROCESSING',
+  READY_FOR_PICKUP = 'READY_FOR_PICKUP',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
 }
@@ -33,7 +46,6 @@ export enum OrderType {
 }
 
 export interface CreateOrderInput {
-  customerName: string
   product: string
   quantity: number
   price: number

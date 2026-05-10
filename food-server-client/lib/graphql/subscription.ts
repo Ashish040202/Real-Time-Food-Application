@@ -4,6 +4,7 @@ export const ORDER_CREATED_SUBSCRIPTION = gql`
   subscription OnOrderCreated {
     orderCreated {
       id
+      userId
       customerName
       product
       quantity
@@ -16,9 +17,10 @@ export const ORDER_CREATED_SUBSCRIPTION = gql`
 `
 
 export const ORDER_UPDATED_SUBSCRIPTION = gql`
-  subscription OnOrderUpdated($orderId: ID!) {
-    orderUpdated:orderStatusUpdated(orderId: $orderId) {
+  subscription OnOrderUpdated($orderId: ID) {
+    orderUpdated: orderStatusUpdated(orderId: $orderId) {
       id
+      userId
       customerName
       product
       quantity

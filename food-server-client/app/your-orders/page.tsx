@@ -1,11 +1,22 @@
 'use client'
 
-import { useQuery, useSubscription, useLazyQuery } from '@apollo/client/react'
+import { useQuery, useSubscription, useLazyQuery, useMutation } from '@apollo/client/react'
 import { GET_ALL_ORDERS, GET_ORDERS_BY_ORDER_ID } from '@/lib/graphql/queries'
+import { UPDATE_ORDER_STATUS } from '@/lib/graphql/mutation'
 import { ORDER_CREATED_SUBSCRIPTION, ORDER_UPDATED_SUBSCRIPTION } from '@/lib/graphql/subscription'
 import OrderTimeline from '@/components/OrderTimeline'
-import { Order } from '@/types/order'
+import AuthGuard from '@/components/AuthGuard'
+import { Order, OrderStatus } from '@/types/order'
 import { useState, useEffect } from 'react'
+
+const statusStyles: Record<string, string> = {
+  PENDING: 'bg-yellow-100 text-yellow-800',
+  ACCEPTED: 'bg-blue-100 text-blue-800',
+  PROCESSING: 'bg-indigo-100 text-indigo-800',
+  READY_FOR_PICKUP: 'bg-teal-100 text-teal-800',
+  COMPLETED: 'bg-green-100 text-green-800',
+  CANCELLED: 'bg-red-100 text-red-800',
+}
 
 interface GetAllOrdersData {
   orders: Order[]
@@ -28,139 +39,104 @@ export default function YourOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null)
 
-  // Update document title
-  useEffect(() => {
-    document.title = 'Food Order - Your Orders'
-  }, [])
-
   const { data, loading, error, subscribeToMore } = useQuery<GetAllOrdersData>(GET_ALL_ORDERS)
+  const [updateOrderStatus] = useMutation(UPDATE_ORDER_STATUS)
 
-  // Lazy query to fetch order details by orderId when an order is clicked
   const [getOrderDetails, { data: orderDetailsData, loading: orderDetailsLoading }] =
     useLazyQuery<GetOrdersByOrderIdData>(GET_ORDERS_BY_ORDER_ID)
 
-  // Subscribe to order updates for the selected order
-  const { data: subscriptionData } = useSubscription<OrderUpdatedData>(ORDER_UPDATED_SUBSCRIPTION, {
-    variables: { orderId: selectedOrderId },
-    skip: !selectedOrderId, // Only subscribe when an order is selected
-  })
+  const { data: subscriptionData } = useSubscription<OrderUpdatedData>(
+    ORDER_UPDATED_SUBSCRIPTION
+  )
 
-  // Initialize orders from query
   useEffect(() => {
-    if (data?.orders) {
-      setOrders(data.orders)
-    }
+    if (data?.orders) setOrders(data.orders)
   }, [data])
 
-  // Subscribe to newly created orders
   useEffect(() => {
-    if (subscribeToMore) {
-      const unsubscribe = subscribeToMore<OrderCreatedData>({
-        document: ORDER_CREATED_SUBSCRIPTION,
-        updateQuery: (prev, { subscriptionData }): GetAllOrdersData => {
-          if (!subscriptionData.data) return prev as GetAllOrdersData
-
-          const newOrder = subscriptionData.data.orderCreated
-          console.log('Received new order via subscription:', newOrder)
-
-          // Check if order already exists in the list
-          const prevOrders = prev.orders || []
-          const orderExists = prevOrders.some((order) => order?.id === newOrder.id)
-
-          if (orderExists) {
-            return prev as GetAllOrdersData
-          }
-
-          // Add new order to the beginning of the list
-          return {
-            orders: [newOrder, ...prevOrders.filter((o): o is Order => o !== undefined)],
-          }
-        },
-      })
-
-      // Cleanup subscription on unmount
-      return () => {
-        if (unsubscribe) {
-          unsubscribe()
-        }
-      }
-    }
+    if (!subscribeToMore) return
+    const unsub = subscribeToMore<OrderCreatedData>({
+      document: ORDER_CREATED_SUBSCRIPTION,
+      updateQuery: (prev, { subscriptionData }): GetAllOrdersData => {
+        if (!subscriptionData.data) return prev as GetAllOrdersData
+        const newOrder = subscriptionData.data.orderCreated
+        const prevOrders = (prev as GetAllOrdersData).orders || []
+        if (prevOrders.some((o) => o?.id === newOrder.id)) return prev as GetAllOrdersData
+        return { orders: [newOrder, ...prevOrders.filter((o): o is Order => !!o)] }
+      },
+    })
+    return () => unsub()
   }, [subscribeToMore])
 
-  // Fetch order details when an order is selected
   useEffect(() => {
-    if (selectedOrderId) {
-      getOrderDetails({ variables: { orderId: selectedOrderId } })
-    }
+    if (selectedOrderId) getOrderDetails({ variables: { orderId: selectedOrderId } })
   }, [selectedOrderId, getOrderDetails])
 
-  // Update selected order details when query returns
   useEffect(() => {
     if (orderDetailsData?.ordersByOrderId) {
       setSelectedOrderDetails(orderDetailsData.ordersByOrderId)
     }
   }, [orderDetailsData])
 
-  // Update order details in real-time when subscription receives new data
   useEffect(() => {
-    if (subscriptionData?.orderUpdated) {
-      const updatedOrder = subscriptionData.orderUpdated
-      console.log('Received order update via subscription:', updatedOrder)
+    if (!subscriptionData?.orderUpdated) return
+    const updated = subscriptionData.orderUpdated
+    setOrders((prev) => {
+      const idx = prev.findIndex((o) => o.id === updated.id)
+      if (idx === -1) return prev
+      const next = [...prev]
+      next[idx] = updated
+      return next
+    })
+    setSelectedOrderDetails((prev) => (prev?.id === updated.id ? updated : prev))
+  }, [subscriptionData])
 
-      // Update the selected order details
-      if (selectedOrderDetails && updatedOrder.id === selectedOrderDetails.id) {
-        setSelectedOrderDetails(updatedOrder)
-      }
-
-      // Update the order in the list
-      setOrders((prevOrders) => {
-        const index = prevOrders.findIndex((order) => order.id === updatedOrder.id)
-        if (index !== -1) {
-          // Update existing order
-          const newOrders = [...prevOrders]
-          newOrders[index] = updatedOrder
-          return newOrders
-        }
-        // If order doesn't exist, add it (in case it was just created)
-        return [...prevOrders, updatedOrder]
-      })
+  const handleCancel = async (id: string) => {
+    try {
+      await updateOrderStatus({ variables: { id, status: 'CANCELLED' } })
+    } catch (err) {
+      console.error('Error cancelling order:', err)
     }
-  }, [subscriptionData, selectedOrderDetails])
+  }
+
+  const displayOrder =
+    selectedOrderDetails ||
+    (selectedOrderId ? orders.find((o) => o.id === selectedOrderId) : orders[0])
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <AuthGuard>
+        <div className="container mx-auto px-4 py-8 flex justify-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-black" />
         </div>
-      </div>
+      </AuthGuard>
     )
   }
 
   if (error) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          <p>Error loading orders. Please check your GraphQL endpoint.</p>
-          <p className="text-sm mt-2">{error.message}</p>
+      <AuthGuard>
+        <div className="container mx-auto px-4 py-8">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            {error.message}
+          </div>
         </div>
-      </div>
+      </AuthGuard>
     )
   }
 
-  const displayOrder =
-    selectedOrderDetails ||
-    (selectedOrderId ? orders.find((order) => order.id === selectedOrderId) : orders[0])
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold text-gray-800 mb-8">Your Orders</h1>
+    <AuthGuard>
+      <div className="container mx-auto px-4 py-10">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Your Orders</h1>
+          <p className="text-gray-500 mt-1">Track the status of your orders in real-time</p>
+        </div>
 
-      {orders.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-md p-12 text-center">
-          <div className="text-gray-400 mb-4">
+        {orders.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-16 text-center">
             <svg
-              className="w-24 h-24 mx-auto"
+              className="w-16 h-16 mx-auto text-gray-200 mb-4"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -172,82 +148,76 @@ export default function YourOrdersPage() {
                 d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
               />
             </svg>
+            <h2 className="text-xl font-semibold text-gray-600 mb-1">No orders yet</h2>
+            <p className="text-gray-400 text-sm">
+              Your order history will appear here once you place your first order.
+            </p>
           </div>
-          <h2 className="text-2xl font-semibold text-gray-600 mb-2">No Orders Yet</h2>
-          <p className="text-gray-500">
-            Your order history will appear here once you place your first order.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Orders List Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-md p-4">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">Order History</h2>
-              <div className="space-y-3">
-                {orders.map((order) => (
-                  <button
-                    key={order.id}
-                    onClick={() => setSelectedOrderId(order.id)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                      displayOrder?.id === order.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-semibold text-gray-800">{order.product}</p>
-                        <p className="text-xs text-gray-500">Order #{order.id.slice(0, 8)}</p>
-                      </div>
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${
-                          order.status === 'PENDING'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : order.status === 'PROCESSING'
-                            ? 'bg-indigo-100 text-indigo-800'
-                            : order.status === 'ACCEPTED'
-                            ? 'bg-blue-100 text-blue-800'
-                            : order.status === 'READY_FOR_PICKUP'
-                            ? 'bg-blue-100 text-blue-800'
-                            : order.status === 'COMPLETED'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+                  Order History
+                </h2>
+                <div className="space-y-2">
+                  {orders.map((order) => (
+                    <div key={order.id} className="space-y-1">
+                      <button
+                        onClick={() => setSelectedOrderId(order.id)}
+                        className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                          displayOrder?.id === order.id
+                            ? 'border-black bg-gray-50'
+                            : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
                         }`}
                       >
-                        {order.status}
-                      </span>
+                        <div className="flex justify-between items-start mb-1">
+                          <p className="font-semibold text-gray-800 text-sm">{order.product}</p>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              statusStyles[order.status] || 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {order.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-400">
+                          <span>#{order.id.slice(0, 8)}</span>
+                          <span className="font-medium text-gray-600">
+                            ${(order.quantity * order.price).toFixed(2)}
+                          </span>
+                        </div>
+                      </button>
+                      {order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
+                        <button
+                          onClick={() => handleCancel(order.id)}
+                          className="w-full text-xs px-3 py-1.5 border border-red-200 text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+                        >
+                          Cancel Order
+                        </button>
+                      )}
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">{order.customerName}</span>
-                      <span className="font-semibold text-gray-800">
-                        ${(order.quantity * order.price).toFixed(2)}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Timeline Details */}
-          <div className="lg:col-span-2">
-            {orderDetailsLoading && selectedOrderId ? (
-              <div className="bg-white rounded-lg shadow-md p-12">
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                  ))}
                 </div>
               </div>
-            ) : displayOrder ? (
-              <OrderTimeline order={displayOrder} />
-            ) : (
-              <div className="bg-white rounded-lg shadow-md p-12 text-center">
-                <p className="text-gray-500">Select an order to view its timeline</p>
-              </div>
-            )}
+            </div>
+
+            <div className="lg:col-span-2">
+              {orderDetailsLoading && selectedOrderId ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-16 flex justify-center">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-black" />
+                </div>
+              ) : displayOrder ? (
+                <OrderTimeline order={displayOrder} />
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-16 text-center">
+                  <p className="text-gray-400 text-sm">Select an order to view its timeline</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </AuthGuard>
   )
 }

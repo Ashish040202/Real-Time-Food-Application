@@ -1,6 +1,6 @@
 import strawberry
 from contextlib import asynccontextmanager
-from strawberry.fastapi import GraphQLRouter
+from strawberry.fastapi import GraphQLRouter, BaseContext
 from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,14 +9,14 @@ from sqlalchemy import select
 
 from schema.resolvers import Query, Mutation, Subscription
 from database import get_db, init_db, AsyncSessionLocal
-from models import MenuItemModel
+from models import MenuItemModel, UserModel
+from auth import decode_token
 
 
 async def seed_menu_items(db: AsyncSession):
     result = await db.execute(select(MenuItemModel))
     if result.scalars().first():
         return
-
     items = [
         MenuItemModel(id="1", name="Chicken Biryani", description="Aromatic basmati rice cooked with tender chicken and traditional spices", rate=14.99, category="Main Course", available=True),
         MenuItemModel(id="2", name="Butter Chicken with Naan", description="Creamy tomato-based curry with succulent chicken pieces, served with fresh naan bread", rate=16.99, category="Main Course", available=True),
@@ -48,8 +48,51 @@ schema = strawberry.Schema(
 )
 
 
-async def get_context(db: AsyncSession = Depends(get_db)):
-    return {"db": db}
+class AppContext(BaseContext):
+    def __init__(self, db: AsyncSession):
+        super().__init__()
+        self.db = db
+        self.current_user = None
+        self._user_loaded = False
+
+    async def load_user(self):
+        if self._user_loaded:
+            return self.current_user
+        self._user_loaded = True
+        token = None
+        conn = self.request or self.websocket
+        if conn:
+            auth_header = conn.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+            else:
+                token = conn.query_params.get("token")
+        if token:
+            user_id = decode_token(token)
+            if user_id:
+                result = await self.db.execute(
+                    select(UserModel).where(UserModel.id == user_id)
+                )
+                self.current_user = result.scalar_one_or_none()
+        return self.current_user
+
+    def get(self, key, default=None):
+        if key == "db":
+            return self.db
+        if key == "current_user":
+            return self.current_user
+        return default
+
+    def __getitem__(self, key):
+        if key == "db":
+            return self.db
+        if key == "current_user":
+            return self.current_user
+        raise KeyError(key)
+
+
+async def get_context(db: AsyncSession = Depends(get_db)) -> AppContext:
+    return AppContext(db=db)
 
 
 graphql_app = GraphQLRouter(

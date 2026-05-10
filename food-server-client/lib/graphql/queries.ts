@@ -1,9 +1,21 @@
 import { gql } from '@apollo/client'
 
+export const ME = gql`
+  query Me {
+    me {
+      id
+      name
+      email
+      role
+    }
+  }
+`
+
 export const GET_ALL_ORDERS = gql`
   query GetAllOrders {
     orders {
       id
+      userId
       customerName
       product
       quantity
@@ -19,21 +31,7 @@ export const GET_SELL_ORDERS = gql`
   query GetSellOrders($type: OrderType!) {
     ordersByType(type: $type) {
       id
-      customerName
-      product
-      quantity
-      price
-      status
-      type
-      createdAt
-    }
-  }
-`
-
-export const GET_ORDER_BY_ID = gql`
-  query GetOrderById($id: ID!) {
-    order(id: $id) {
-      id
+      userId
       customerName
       product
       quantity
@@ -49,6 +47,7 @@ export const GET_ORDERS_BY_ORDER_ID = gql`
   query GetOrdersByOrderId($orderId: ID!) {
     ordersByOrderId(orderId: $orderId) {
       id
+      userId
       customerName
       product
       quantity
@@ -61,7 +60,7 @@ export const GET_ORDERS_BY_ORDER_ID = gql`
 `
 
 export const LIST_ORDER_ITEMS = gql`
-  query listOrderItems {
+  query ListOrderItems {
     listOrderItems {
       id
       name

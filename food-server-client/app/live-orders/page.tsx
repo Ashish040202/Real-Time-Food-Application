@@ -1,101 +1,119 @@
 'use client'
 
 import { useSubscription, useMutation } from '@apollo/client/react'
-import { ORDER_CREATED_SUBSCRIPTION } from '@/lib/graphql/subscription'
+import { ORDER_CREATED_SUBSCRIPTION, ORDER_UPDATED_SUBSCRIPTION } from '@/lib/graphql/subscription'
 import { UPDATE_ORDER_STATUS } from '@/lib/graphql/mutation'
+import AuthGuard from '@/components/AuthGuard'
 import { useState, useEffect } from 'react'
-import { Order } from '@/types/order'
+import { Order, OrderStatus } from '@/types/order'
 
-interface OrderCreatedSubscriptionData {
+const statusStyles: Record<string, string> = {
+  PENDING: 'bg-yellow-100 text-yellow-800',
+  ACCEPTED: 'bg-blue-100 text-blue-800',
+  PROCESSING: 'bg-indigo-100 text-indigo-800',
+  READY_FOR_PICKUP: 'bg-teal-100 text-teal-800',
+  COMPLETED: 'bg-green-100 text-green-800',
+  CANCELLED: 'bg-red-100 text-red-800',
+}
+
+interface OrderCreatedData {
   orderCreated: Order
+}
+
+interface OrderUpdatedData {
+  orderUpdated: Order
 }
 
 export default function LiveOrdersPage() {
   const [liveOrders, setLiveOrders] = useState<Order[]>([])
 
-  // Subscribe to the orderCreated event
-  const { data } = useSubscription<OrderCreatedSubscriptionData>(ORDER_CREATED_SUBSCRIPTION)
-
-  // Mutation to update order status
+  const { data: createdData } = useSubscription<OrderCreatedData>(ORDER_CREATED_SUBSCRIPTION)
+  const { data: updatedData } = useSubscription<OrderUpdatedData>(ORDER_UPDATED_SUBSCRIPTION)
   const [updateOrderStatus] = useMutation(UPDATE_ORDER_STATUS)
 
-  // Handle status change
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
-      await updateOrderStatus({
-        variables: {
-          id: orderId,
-          status: newStatus,
-        },
-      })
-
-      // Update local state to reflect the change
-      setLiveOrders((prevOrders) =>
-        prevOrders.map((order) =>
-          order.id === orderId ? { ...order, status: newStatus as Order['status'] } : order
-        )
-      )
+      await updateOrderStatus({ variables: { id: orderId, status: newStatus } })
     } catch (error) {
       console.error('Error updating order status:', error)
     }
   }
 
-  // Update document title
-      useEffect(() => {
-        document.title = 'Food Order - Live Orders'
-      }, [])
-
   useEffect(() => {
-    if (data?.orderCreated) {
-      console.log('New order received:', data.orderCreated)
-
-      // Add the new order to the beginning of the list
-      setLiveOrders((prevOrders) => {
-        // Check if order already exists to avoid duplicates
-        const orderExists = prevOrders.some((order) => order.id === data.orderCreated.id)
-        if (!orderExists) {
-          return [data.orderCreated, ...prevOrders]
-        }
-        return prevOrders
+    if (createdData?.orderCreated) {
+      setLiveOrders((prev) => {
+        if (prev.some((o) => o.id === createdData.orderCreated.id)) return prev
+        return [createdData.orderCreated, ...prev]
       })
     }
-  }, [data])
+  }, [createdData])
+
+  useEffect(() => {
+    if (updatedData?.orderUpdated) {
+      setLiveOrders((prev) =>
+        prev.map((o) => (o.id === updatedData.orderUpdated.id ? updatedData.orderUpdated : o))
+      )
+    }
+  }, [updatedData])
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">Live Orders</h1>
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white border border-gray-300">
-          <thead>
-            <tr>
-              <th className="px-4 py-2 border">ID</th>
-              <th className="px-4 py-2 border">Customer Name</th>
-              <th className="px-4 py-2 border">Product</th>
-              <th className="px-4 py-2 border">Quantity</th>
-              <th className="px-4 py-2 border">Price</th>
-              <th className="px-4 py-2 border">Status</th>
-              <th className="px-4 py-2 border">Update the status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {liveOrders.map((order: Order) => (
-              <tr key={order.id}>
-                <td className="px-4 py-2 border">{order.id}</td>
-                <td className="px-4 py-2 border">{order.customerName}</td>
-                <td className="px-4 py-2 border">{order.product}</td>
-                <td className="px-4 py-2 border">{order.quantity}</td>
-                <td className="px-4 py-2 border">${order.price.toFixed(2)}</td>
-                <td className="px-4 py-2 border">
-                  <span className={`px-2 py-1 rounded text-sm bg-yellow-200 text-yellow-800`}>
-                    {order.status}
-                  </span>
-                </td>
-                <td className="px-4 py-2 border">
-                  <span className={`px-2 py-1 rounded text-sm bg-gray-200 text-gray-800`}>
+    <AuthGuard adminOnly>
+      <div className="container mx-auto px-4 py-10">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Live Orders</h1>
+            <p className="text-gray-500 mt-1">Real-time incoming orders feed</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-sm text-gray-500">{liveOrders.length} orders received</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-100">
+            <thead className="bg-gray-50">
+              <tr>
+                {['Order ID', 'Customer', 'Product', 'Qty', 'Total', 'Status', 'Update'].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                    >
+                      {h}
+                    </th>
+                  )
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {liveOrders.map((order) => (
+                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-3 text-xs text-gray-400 font-mono">
+                    #{order.id.slice(0, 8)}
+                  </td>
+                  <td className="px-5 py-3 text-sm font-medium text-gray-800">
+                    {order.customerName}
+                  </td>
+                  <td className="px-5 py-3 text-sm text-gray-700">{order.product}</td>
+                  <td className="px-5 py-3 text-sm text-gray-700">{order.quantity}</td>
+                  <td className="px-5 py-3 text-sm font-medium text-gray-800">
+                    ${(order.quantity * order.price).toFixed(2)}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        statusStyles[order.status] || 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {order.status.replace('_', ' ')}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3">
                     <select
                       value={order.status}
                       onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                      className="bg-transparent border-0 focus:ring-0 cursor-pointer"
+                      className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-black"
                     >
                       <option value="PENDING">Pending</option>
                       <option value="ACCEPTED">Accepted</option>
@@ -104,20 +122,20 @@ export default function LiveOrdersPage() {
                       <option value="COMPLETED">Completed</option>
                       <option value="CANCELLED">Cancelled</option>
                     </select>
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {liveOrders.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-4 py-2 border text-center text-gray-500">
-                  No live orders yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  </td>
+                </tr>
+              ))}
+              {liveOrders.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-5 py-12 text-center text-gray-400 text-sm">
+                    Waiting for incoming orders...
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </AuthGuard>
   )
 }

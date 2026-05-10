@@ -7,14 +7,45 @@ from strawberry.types import Info
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from .types import Order, MenuItem, OrderStatus, OrderType, CreateOrderInput
-from models import OrderModel, MenuItemModel
+from .types import (
+    Order, MenuItem, User, AuthPayload,
+    OrderStatus, OrderType, UserRole,
+    CreateOrderInput, RegisterInput, LoginInput,
+)
+from models import OrderModel, MenuItemModel, UserModel
+from auth import hash_password, verify_password, create_access_token
 import redis_client
+
+
+# ---------- helpers ----------
+
+async def require_auth(info: Info) -> UserModel:
+    user = await info.context.load_user()
+    if not user:
+        raise ValueError("Authentication required")
+    return user
+
+
+async def require_admin(info: Info) -> UserModel:
+    user = await require_auth(info)
+    if user.role != UserRole.ADMIN.value:
+        raise ValueError("Admin access required")
+    return user
+
+
+def model_to_user(m: UserModel) -> User:
+    return User(
+        id=strawberry.ID(m.id),
+        name=m.name,
+        email=m.email,
+        role=UserRole(m.role),
+    )
 
 
 def model_to_order(m: OrderModel) -> Order:
     return Order(
         id=strawberry.ID(m.id),
+        user_id=strawberry.ID(m.user_id) if m.user_id else None,
         customer_name=m.customer_name,
         product=m.product,
         quantity=m.quantity,
@@ -39,6 +70,7 @@ def model_to_menu_item(m: MenuItemModel) -> MenuItem:
 def order_to_dict(order: Order) -> dict:
     return {
         "id": str(order.id),
+        "user_id": str(order.user_id) if order.user_id else None,
         "customer_name": order.customer_name,
         "product": order.product,
         "quantity": order.quantity,
@@ -52,6 +84,7 @@ def order_to_dict(order: Order) -> dict:
 def dict_to_order(data: dict) -> Order:
     return Order(
         id=strawberry.ID(data["id"]),
+        user_id=strawberry.ID(data["user_id"]) if data.get("user_id") else None,
         customer_name=data["customer_name"],
         product=data["product"],
         quantity=int(data["quantity"]),
@@ -62,38 +95,59 @@ def dict_to_order(data: dict) -> Order:
     )
 
 
+# ---------- Query ----------
+
 @strawberry.type
 class Query:
     @strawberry.field
+    async def me(self, info: Info) -> User:
+        return model_to_user(await require_auth(info))
+
+    @strawberry.field
     async def orders(self, info: Info) -> List[Order]:
         db: AsyncSession = info.context["db"]
-        result = await db.execute(select(OrderModel))
+        user = await require_auth(info)
+        if user.role == UserRole.ADMIN.value:
+            result = await db.execute(select(OrderModel))
+        else:
+            result = await db.execute(
+                select(OrderModel).where(OrderModel.user_id == user.id)
+            )
         return [model_to_order(o) for o in result.scalars().all()]
 
     @strawberry.field
     async def orders_by_status(self, info: Info, status: OrderStatus) -> List[Order]:
         db: AsyncSession = info.context["db"]
-        result = await db.execute(
-            select(OrderModel).where(OrderModel.status == status.value)
-        )
+        user = await require_auth(info)
+        stmt = select(OrderModel).where(OrderModel.status == status.value)
+        if user.role != UserRole.ADMIN.value:
+            stmt = stmt.where(OrderModel.user_id == user.id)
+        result = await db.execute(stmt)
         return [model_to_order(o) for o in result.scalars().all()]
 
     @strawberry.field
     async def orders_by_type(self, info: Info, type: OrderType) -> List[Order]:
         db: AsyncSession = info.context["db"]
-        result = await db.execute(
-            select(OrderModel).where(OrderModel.type == type.value)
-        )
+        user = await require_auth(info)
+        stmt = select(OrderModel).where(OrderModel.type == type.value)
+        if user.role != UserRole.ADMIN.value:
+            stmt = stmt.where(OrderModel.user_id == user.id)
+        result = await db.execute(stmt)
         return [model_to_order(o) for o in result.scalars().all()]
 
     @strawberry.field
     async def orders_by_order_id(self, info: Info, order_id: strawberry.ID) -> Optional[Order]:
         db: AsyncSession = info.context["db"]
+        user = await require_auth(info)
         result = await db.execute(
             select(OrderModel).where(OrderModel.id == str(order_id))
         )
         m = result.scalar_one_or_none()
-        return model_to_order(m) if m else None
+        if not m:
+            return None
+        if user.role != UserRole.ADMIN.value and m.user_id != user.id:
+            raise ValueError("Access denied")
+        return model_to_order(m)
 
     @strawberry.field
     async def list_order_items(self, info: Info) -> List[MenuItem]:
@@ -102,14 +156,49 @@ class Query:
         return [model_to_menu_item(m) for m in result.scalars().all()]
 
 
+# ---------- Mutation ----------
+
 @strawberry.type
 class Mutation:
     @strawberry.mutation
+    async def register(self, info: Info, input: RegisterInput) -> AuthPayload:
+        db: AsyncSession = info.context["db"]
+        existing = await db.execute(
+            select(UserModel).where(UserModel.email == input.email)
+        )
+        if existing.scalar_one_or_none():
+            raise ValueError("Email already registered")
+        user = UserModel(
+            id=str(uuid.uuid4()),
+            name=input.name,
+            email=input.email,
+            password_hash=hash_password(input.password),
+            role=input.role.value,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return AuthPayload(token=create_access_token(user.id), user=model_to_user(user))
+
+    @strawberry.mutation
+    async def login(self, info: Info, input: LoginInput) -> AuthPayload:
+        db: AsyncSession = info.context["db"]
+        result = await db.execute(
+            select(UserModel).where(UserModel.email == input.email)
+        )
+        user = result.scalar_one_or_none()
+        if not user or not verify_password(input.password, user.password_hash):
+            raise ValueError("Invalid email or password")
+        return AuthPayload(token=create_access_token(user.id), user=model_to_user(user))
+
+    @strawberry.mutation
     async def create_order(self, info: Info, input: CreateOrderInput) -> Order:
         db: AsyncSession = info.context["db"]
+        user = await require_auth(info)
         new_model = OrderModel(
             id=str(uuid.uuid4()),
-            customer_name=input.customer_name,
+            user_id=user.id,
+            customer_name=user.name,
             product=input.product,
             quantity=input.quantity,
             price=input.price,
@@ -127,12 +216,15 @@ class Mutation:
     @strawberry.mutation
     async def update_order_status(self, info: Info, id: strawberry.ID, status: OrderStatus) -> Order:
         db: AsyncSession = info.context["db"]
+        user = await require_auth(info)
         result = await db.execute(
             select(OrderModel).where(OrderModel.id == str(id))
         )
         order_model = result.scalar_one_or_none()
         if not order_model:
             raise ValueError("Order not found")
+        if user.role != UserRole.ADMIN.value and order_model.user_id != user.id:
+            raise ValueError("Access denied")
         order_model.status = status.value
         await db.commit()
         await db.refresh(order_model)
@@ -141,16 +233,22 @@ class Mutation:
         return order
 
 
+# ---------- Subscription ----------
+
 @strawberry.type
 class Subscription:
     @strawberry.subscription
     async def order_created(self, info: Info) -> AsyncGenerator[Order, None]:
+        user = await require_auth(info)
         r, pubsub = await redis_client.create_pubsub()
         await pubsub.subscribe("ORDER_CREATED")
         try:
             async for message in pubsub.listen():
                 if message["type"] == "message":
-                    yield dict_to_order(json.loads(message["data"]))
+                    order = dict_to_order(json.loads(message["data"]))
+                    if user.role != UserRole.ADMIN.value and str(order.user_id) != user.id:
+                        continue
+                    yield order
         finally:
             await pubsub.unsubscribe("ORDER_CREATED")
             await r.aclose()
@@ -159,12 +257,15 @@ class Subscription:
     async def order_status_updated(
         self, info: Info, order_id: Optional[strawberry.ID] = None
     ) -> AsyncGenerator[Order, None]:
+        user = await require_auth(info)
         r, pubsub = await redis_client.create_pubsub()
         await pubsub.subscribe("ORDER_STATUS_UPDATED")
         try:
             async for message in pubsub.listen():
                 if message["type"] == "message":
                     order = dict_to_order(json.loads(message["data"]))
+                    if user.role != UserRole.ADMIN.value and str(order.user_id) != user.id:
+                        continue
                     if order_id and str(order.id) != str(order_id):
                         continue
                     yield order

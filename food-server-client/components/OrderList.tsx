@@ -5,12 +5,14 @@ interface OrderListProps {
     orders: Order[];
     loading?:  boolean;
     onStatusChange?: (id: string, status: OrderStatus) => void;
+    onCancel?: (id: string) => void;
 }
 
 export default function OrderList({
                                       orders,
                                       loading,
                                       onStatusChange,
+                                      onCancel,
                                   }:  OrderListProps) {
     if (loading) {
         return (
@@ -40,6 +42,7 @@ export default function OrderList({
                     key={order. id}
                     order={order}
                     onStatusChange={onStatusChange}
+                    onCancel={onCancel}
                 />
             ))}
         </div>

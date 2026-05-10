@@ -1,59 +1,45 @@
-'use client';
+'use client'
 
-import { useMutation } from '@apollo/client/react';
-import { CREATE_ORDER } from '@/lib/graphql/mutation';
-import { GET_ALL_ORDERS } from '@/lib/graphql/queries';
-import { CreateOrderInput } from '@/types/order';
-import { useState ,useEffect} from 'react';
-import OrderForm from '@/components/OrderForm';
+import { useMutation } from '@apollo/client/react'
+import { CREATE_ORDER } from '@/lib/graphql/mutation'
+import { GET_ALL_ORDERS } from '@/lib/graphql/queries'
+import { CreateOrderInput } from '@/types/order'
+import { useRouter } from 'next/navigation'
+import OrderForm from '@/components/OrderForm'
+import AuthGuard from '@/components/AuthGuard'
 
 export default function NewOrdersPage() {
-    const [successMessage, setSuccessMessage] = useState('');
-    const [createOrder, { loading, error }] = useMutation(CREATE_ORDER, {
-        refetchQueries: [{ query:  GET_ALL_ORDERS }],
-    });
+  const router = useRouter()
 
-      // Update document title
-      useEffect(() => {
-        document.title = 'Food Order - New Order'
-      }, [])
+  const [createOrder, { loading, error }] = useMutation(CREATE_ORDER, {
+    refetchQueries: [{ query: GET_ALL_ORDERS }],
+  })
 
-    const handleSubmit = async (input: CreateOrderInput) => {
-        try {
-            await createOrder({
-                variables: { input },
-            });
-            setSuccessMessage('Order created successfully!');
-            setTimeout(() => setSuccessMessage(''), 3000);
-        } catch (err) {
-            console.error('Error creating order:', err);
-        }
-    };
+  const handleSubmit = async (input: CreateOrderInput) => {
+    try {
+      await createOrder({ variables: { input } })
+      router.push('/your-orders')
+    } catch {
+      // error shown below
+    }
+  }
 
-    return (
-        <div className="container mx-auto px-4 py-8">
-            <h1 className="text-3xl font-bold text-gray-800 mb-8 text-center">
-                Create New Order
-            </h1>
-
-            {successMessage && (
-                <div className="max-w-2xl mx-auto mb-6">
-                    <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-                        {successMessage}
-                    </div>
-                </div>
-            )}
-
-            {error && (
-                <div className="max-w-2xl mx-auto mb-6">
-                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                        <p>Error creating order.  Please check your GraphQL endpoint.</p>
-                        <p className="text-sm mt-2">{error.message}</p>
-                    </div>
-                </div>
-            )}
-
-            <OrderForm onSubmit={handleSubmit} loading={loading} />
+  return (
+    <AuthGuard>
+      <div className="container mx-auto px-4 py-10">
+        <div className="max-w-2xl mx-auto mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">New Order</h1>
+          <p className="text-gray-500 mt-1">Choose from our menu and place your order</p>
         </div>
-    );
+
+        {error && (
+          <div className="max-w-2xl mx-auto mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            {error.message}
+          </div>
+        )}
+
+        <OrderForm onSubmit={handleSubmit} loading={loading} />
+      </div>
+    </AuthGuard>
+  )
 }
