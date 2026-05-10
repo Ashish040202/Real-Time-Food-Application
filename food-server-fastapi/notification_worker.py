@@ -267,9 +267,13 @@ async def run_worker() -> None:
             try:
                 payload = json.loads(raw)
                 job = _Job(payload["name"], payload["data"], payload["id"])
+                print(f"[notification_worker] processing job name={job.name} type={job.data.get('type')}", flush=True)
                 await _process_job(job, None)
+                print(f"[notification_worker] job done name={job.name}", flush=True)
             except Exception as exc:
-                print(f"[notification_worker] worker job error: {exc}")
+                import traceback
+                print(f"[notification_worker] worker job error: {exc}", flush=True)
+                traceback.print_exc()
 
     except asyncio.CancelledError:
         pass
