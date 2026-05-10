@@ -132,10 +132,11 @@ async def _process_job(job: _Job, _token) -> None:
                     )
                     db.add(notif)
                     await db.flush()
-                    await r.publish(
+                    subs = await r.publish(
                         f"NOTIFICATION:{admin.id}",
                         json.dumps(_notif_dict(notif)),
                     )
+                    print(f"[notification_worker] pushed NOTIFICATION:{admin.id} subscribers={subs}", flush=True)
 
                 await db.commit()
 

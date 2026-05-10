@@ -398,6 +398,7 @@ class Subscription:
         r, pubsub = await redis_client.create_pubsub()
         channel = f"NOTIFICATION:{user.id}"
         await pubsub.subscribe(channel)
+        print(f"[notification_sub] subscribed channel={channel} user_role={user.role}", flush=True)
         try:
             async for message in pubsub.listen():
                 if message["type"] == "message":
