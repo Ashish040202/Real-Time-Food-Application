@@ -34,8 +34,9 @@ config.set_main_option("sqlalchemy.url", _db_url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import AFTER DATABASE_URL is set in os.environ
-from database import Base  # noqa: E402
+# Import Base from base.py — avoids importing database.py's engine creation entirely.
+# Import models so they register with Base.metadata for autogenerate.
+from base import Base  # noqa: E402
 import models  # noqa: E402, F401
 
 target_metadata = Base.metadata

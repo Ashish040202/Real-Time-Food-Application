@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import Column, String, Integer, Float, Boolean, ForeignKey
-from database import Base
+from base import Base
 
 
 class UserModel(Base):
