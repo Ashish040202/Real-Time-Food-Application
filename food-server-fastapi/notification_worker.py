@@ -31,6 +31,7 @@ load_dotenv()
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
 
 # Redis list key that acts as the job queue
 _QUEUE_KEY = "patiala_house:notifications:queue"
@@ -56,7 +57,7 @@ class _Queue:
     """
 
     async def add(self, name: str, data: dict) -> None:
-        r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+        r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
         try:
             payload = json.dumps({
                 "id": str(uuid.uuid4()),
@@ -93,7 +94,7 @@ async def _process_job(job: _Job, _token) -> None:
     if job_type == "ORDER_CANCELLED" and data.get("triggered_by_role") == "ADMIN":
         return
 
-    r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
     try:
         async with AsyncSessionLocal() as db:
             now = datetime.now(timezone.utc).isoformat()
@@ -189,7 +190,7 @@ async def run_subscriber() -> None:
     every qualifying event.  Intentionally isolated from the mutation path —
     errors here never surface to the HTTP caller.
     """
-    r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
     pubsub = r.pubsub()
     await pubsub.subscribe("ORDER_CREATED", "ORDER_STATUS_UPDATED")
     print("[notification_worker] subscriber started")
@@ -251,7 +252,7 @@ async def run_worker() -> None:
     Dequeues jobs from the Redis list using BRPOP (atomic, blocking up to 1 s).
     Runs until the lifespan task is cancelled on server shutdown.
     """
-    r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
     print("[notification_worker] worker started")
     try:
         while True:
